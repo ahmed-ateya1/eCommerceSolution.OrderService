@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  orderservice.api:
+    image: orderserviceapi
+    build:
+      context: .
+      dockerfile: OrderService.API/Dockerfile
+    environment:
+        - ASPNETCORE_ENVIRONMENT=Development
+        - MONGODB_HOST=mongodb-container
+        - MONGODB_PORT=27017
+        - MONGODB_DATABASE=OrdersDatabase
+        - UsersMicroserviceName=users-microservice
+        - UsersMicroservicePort=9090
+        - ProductsMicroservicePort=7070
+        - ProductsMicroserviceName=products-microservice
+    ports:
+        - "7000:8080"
+    networks:
+        - ecommerce-network
+        - order-mongo-network
+    depends_on:
+        - mongodb-container
+        - users-microservice
+        - products-microservice
+
+  mongodb-container:
+    image: mongo:latest
+    ports:
+        - "27017:27017"
+    volumes:
+        - ../mongodb-init:/docker-entrypoint-initdb.d
+    networks:
+        - order-mongo-network
+
+  users-microservice:
+    image: users-microservice:latest
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_HTTP_PORTS=9090
+      - POSTGRES_HOST=postgres-user-container
+      - POSTGRES_PASSWORD=ahmed
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=eCommerceUsers
+      - POSTGRES_PORT=5432
+    ports:
+      - "5000:9090"
+    networks:
+      - ecommerce-network
+      - user-postgres-network
+    depends_on:
+      - postgres-user-container
+
+  postgres-user-container:
+    image: postgres:latest
+    ports:
+       - "5433:5432"
+    environment:
+       - POSTGRES_PASSWORD=ahmed
+       - POSTGRES_USER=postgres
+       - POSTGRES_DB=eCommerceUsers
+    volumes:
+       - ../postgres-init:/docker-entrypoint-initdb.d
+    networks:
+       - user-postgres-network
+
+  products-microservice:
+    image: products-microservice:latest
+    environment:
+        - MYSQL_HOST=mysql-product-container
+        - MYSQL_PASSWORD=admin
+        - MYSQL_USER=root
+        - MYSQL_DATABASE=ecommerceproductsdatabase
+        - MYSQL_PORT=3306
+        - ASPNETCORE_ENVIRONMENT=Development
+        - ASPNETCORE_HTTP_PORTS=7070
+    ports:
+        - "6000:7070"
+    networks:
+        - ecommerce-network
+        - product-mysql-network
+    depends_on:
+        - mysql-product-container
+
+  mysql-product-container:
+    image: mysql:latest
+    ports:
+        - "3307:3306"
+    environment:
+        - MYSQL_ROOT_PASSWORD=admin
+        - MYSQL_DATABASE=ecommerceproductsdatabase
+    volumes:
+        - ../mysql-init:/docker-entrypoint-initdb.d
+    networks:
+        - product-mysql-network
+
+networks:
+  ecommerce-network:
+    driver: bridge
+  user-postgres-network:
+    driver: bridge
+  product-mysql-network:
+    driver: bridge
+  order-mongo-network:
+    driver: bridge
