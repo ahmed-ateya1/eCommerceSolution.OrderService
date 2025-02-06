@@ -52,34 +52,19 @@ namespace OrderService.BusinessLayer.Services
                 var errors = string.Join(", ", validationAddRequestResult.Errors.Select(x => x.ErrorMessage));
                 throw new ValidationException(errors);
             }
-            UserDto? user = await _userMicrosoftClient.GetUserByID(orderRequest.UserID);
-            if (user == null)
-            {
-                throw new KeyNotFoundException("User not found");
-            }
-            var orderItemsErrors = new List<string>();
-            foreach (var item in orderRequest.OrderItems)
-            {
-                var validationOrderItemsAddRequestResult = _orderItemsAddRequestValidator.Validate(item);
-                if (!validationOrderItemsAddRequestResult.IsValid)
-                {
-                    orderItemsErrors.AddRange(validationOrderItemsAddRequestResult.Errors.Select(x => x.ErrorMessage));
-                }
-                ProductDto? product = await _productMicroservicesClient.GetProductByID(item.ProductID);
-                if (product == null)
-                {
-                    throw new KeyNotFoundException($"Product with ID {item.ProductID} not found");
-                }
-            }
 
-            if (orderItemsErrors.Any())
-            {
-                throw new ValidationException("Order items validation failed: " + string.Join(", ", orderItemsErrors));
-            }
+            //validatie user
+            await ValidateUserExists(orderRequest.UserID);
+            //validate request
+            ValidateRequest(orderRequest, _orderAddRequestValidator);
+            //validate orderitems
+            await ValidateOrderItems(orderRequest.OrderItems);
           
             var order = _mapper.Map<Order>(orderRequest);
             await _orderRepository.CreateAsync(order);
-            return _mapper.Map<OrderResponse>(order);
+            var result =  _mapper.Map<OrderResponse>(order);
+            await EnrichOrderItemsWithProductDetails(new List<OrderResponse> { result });
+            return result;
         }
 
         public async Task<bool> DeleteAsync(Guid orderId)
@@ -100,7 +85,9 @@ namespace OrderService.BusinessLayer.Services
             {
                 return Enumerable.Empty<OrderResponse>();
             }
-            return _mapper.Map<IEnumerable<OrderResponse>>(orders);
+            var result = _mapper.Map<IEnumerable<OrderResponse>>(orders);    
+            await EnrichOrderItemsWithProductDetails(result);
+            return result;
         }
 
         public async Task<OrderResponse> GetByAsync(FilterDefinition<Order> filter)
@@ -110,7 +97,9 @@ namespace OrderService.BusinessLayer.Services
             {
                 return null;
             }
-            return _mapper.Map<OrderResponse>(order);
+            var result =  _mapper.Map<OrderResponse>(order);
+            await EnrichOrderItemsWithProductDetails(new List<OrderResponse> { result });
+            return result;
         }
 
         public async Task<OrderResponse> UpdateAsync(OrderUpdateRequest? orderRequest)
@@ -146,11 +135,7 @@ namespace OrderService.BusinessLayer.Services
             {
                 throw new ValidationException("Order items validation failed: " + string.Join(", ", orderItemsErrors));
             }
-            UserDto? user = await _userMicrosoftClient.GetUserByID(orderRequest.UserID);
-            if (user == null)
-            {
-                throw new KeyNotFoundException("User not found");
-            }
+            await ValidateUserExists(orderRequest.UserID);
             var filter = Builders<Order>.Filter.Eq(x => x.OrderID, orderRequest.OrderID);
             var existingOrder = await _orderRepository.GetByAsync(filter);
             if (existingOrder == null)
@@ -160,7 +145,62 @@ namespace OrderService.BusinessLayer.Services
 
             _mapper.Map(orderRequest, existingOrder);
             await _orderRepository.UpdateAsync(existingOrder);
-            return _mapper.Map<OrderResponse>(existingOrder);
+            var result =  _mapper.Map<OrderResponse>(existingOrder);
+            await EnrichOrderItemsWithProductDetails(new List<OrderResponse> { result });
+            return result;
+        }
+        private async Task<UserDto> ValidateUserExists(Guid userId)
+        {
+            var user = await _userMicrosoftClient.GetUserByID(userId);
+            if (user == null)
+                throw new KeyNotFoundException($"User with ID {userId} not found");
+            return user;
+        }
+        private async Task ValidateOrderItems(IEnumerable<OrderItemsAddRequest> orderItems)
+        {
+            var errors = new List<string>();
+
+            foreach (var item in orderItems)
+            {
+                var validationResult = _orderItemsAddRequestValidator.Validate(item);
+                if (!validationResult.IsValid)
+                    errors.AddRange(validationResult.Errors.Select(x => x.ErrorMessage));
+
+                var product = await _productMicroservicesClient.GetProductByID(item.ProductID);
+                if (product == null)
+                    errors.Add($"Product with ID {item.ProductID} not found");
+            }
+
+            if (errors.Any())
+                throw new ValidationException("Order items validation failed: " + string.Join(", ", errors));
+        }
+
+        private async Task EnrichOrderItemsWithProductDetails(IEnumerable<OrderResponse> orders)
+        {
+            foreach (var order in orders)
+            {
+                var user = await ValidateUserExists(order.UserID);
+                order.UserName = user.PersonName;
+                order.Email = user.Email;
+            }
+            foreach (var item in orders.SelectMany(x => x.OrderItems))
+            {
+                var product = await _productMicroservicesClient.GetProductByID(item.ProductID);
+                if (product == null)
+                    throw new KeyNotFoundException($"Product with ID {item.ProductID} not found");
+
+                item.ProductName = product.ProductName;
+                item.Category = product.Category;
+            }
+        }
+        private void ValidateRequest<T>(T request, IValidator<T> validator)
+        {
+            var validationResult = validator.Validate(request);
+            if (!validationResult.IsValid)
+            {
+                var errors = string.Join(", ", validationResult.Errors.Select(x => x.ErrorMessage));
+                throw new ValidationException(errors);
+            }
         }
     }
 }

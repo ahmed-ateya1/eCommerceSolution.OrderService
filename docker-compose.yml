@@ -12,7 +12,7 @@ services:
         - MONGODB_PORT=27017
         - MONGODB_DATABASE=OrdersDatabase
         - UsersMicroserviceName=users-microservice
-        - UsersMicroservicePort=9090
+        - UsersMicroservicePort=9090 #this is container-port (inside docker file) not host-port
         - ProductsMicroservicePort=7070
         - ProductsMicroserviceName=products-microservice
     ports:
