@@ -11,10 +11,12 @@ services:
         - MONGODB_HOST=mongodb-container
         - MONGODB_PORT=27017
         - MONGODB_DATABASE=OrdersDatabase
-        - UsersMicroserviceName=users-microservice
-        - UsersMicroservicePort=9090 #this is container-port (inside docker file) not host-port
-        - ProductsMicroservicePort=7070
-        - ProductsMicroserviceName=products-microservice
+        - UsersMicroserviceName=apigateway
+        - UsersMicroservicePort=8080 
+        - ProductsMicroservicePort=8080
+        - ProductsMicroserviceName=apigateway
+        - REDIS_HOST=redis
+        - REDIS_PORT=6379
     ports:
         - "7000:8080"
     networks:
@@ -24,7 +26,6 @@ services:
         - mongodb-container
         - users-microservice
         - products-microservice
-
   mongodb-container:
     image: mongo:latest
     ports:
@@ -33,7 +34,6 @@ services:
         - ../mongodb-init:/docker-entrypoint-initdb.d
     networks:
         - order-mongo-network
-
   users-microservice:
     image: users-microservice:latest
     environment:
@@ -51,7 +51,6 @@ services:
       - user-postgres-network
     depends_on:
       - postgres-user-container
-
   postgres-user-container:
     image: postgres:latest
     ports:
@@ -64,7 +63,6 @@ services:
        - ../postgres-init:/docker-entrypoint-initdb.d
     networks:
        - user-postgres-network
-
   products-microservice:
     image: products-microservice:latest
     environment:
@@ -82,7 +80,6 @@ services:
         - product-mysql-network
     depends_on:
         - mysql-product-container
-
   mysql-product-container:
     image: mysql:latest
     ports:
@@ -94,7 +91,23 @@ services:
         - ../mysql-init:/docker-entrypoint-initdb.d
     networks:
         - product-mysql-network
-
+  redis:
+    image: redis:latest
+    ports:
+       - "6379:6379"
+    volumes:
+       - C:\.NET Code\Microservices\redis-cache:/data
+    networks:
+       - ecommerce-network
+  apigateway:
+    image: apigateway
+    build:
+      context: .
+      dockerfile: ApiGateway/Dockerfile
+    ports:
+      - "4000:8080"
+    networks:
+      - ecommerce-network
 networks:
   ecommerce-network:
     driver: bridge

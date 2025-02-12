@@ -1,7 +1,7 @@
 ﻿using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
-using OrderService.BusinessLayer.HttpClients;
 using OrderService.BusinessLayer.MappingProfile;
+using OrderService.BusinessLayer.Policies;
 using OrderService.BusinessLayer.ServiceContracts;
 using OrderService.BusinessLayer.Services;
 using OrderService.BusinessLayer.Validators;
@@ -15,7 +15,10 @@ namespace OrderService.BusinessLayer
             services.AddAutoMapper(typeof(OrderConfig).Assembly);
             services.AddValidatorsFromAssemblyContaining<OrderAddRequestValidator>();
             services.AddScoped<IOrderService, OrderServices>();
-            
+            services.AddTransient<IProductMicroservicePolicies, ProductMicroservicePolicies>();
+            services.AddTransient<IUserMicroservicePolicies, UserMicroservicePolicies>();
+            services.AddTransient<IPollyPolicies, PollyPolicies>();
+
             return services;
         }
     }

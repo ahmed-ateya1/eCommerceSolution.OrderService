@@ -54,7 +54,7 @@ namespace OrderService.BusinessLayer.Services
             }
 
             //validatie user
-            await ValidateUserExists(orderRequest.UserID);
+            var user = await ValidateUserExists(orderRequest.UserID);
             //validate request
             ValidateRequest(orderRequest, _orderAddRequestValidator);
             //validate orderitems
