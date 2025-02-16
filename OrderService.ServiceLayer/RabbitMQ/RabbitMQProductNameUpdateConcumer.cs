@@ -1,5 +1,7 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using OrderService.BusinessLayer.Dtos;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
@@ -11,12 +13,13 @@ namespace OrderService.BusinessLayer.RabbitMQ
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger<RabbitMQProductNameUpdateConcumer> _logger;
-
-        public RabbitMQProductNameUpdateConcumer(IConfiguration configuration, ILogger<RabbitMQProductNameUpdateConcumer> logger)
+        private readonly IDistributedCache _distributedCache;
+        public RabbitMQProductNameUpdateConcumer(IConfiguration configuration, ILogger<RabbitMQProductNameUpdateConcumer> logger, IDistributedCache distributedCache)
         {
             _configuration = configuration;
             InitializeAsync().GetAwaiter().GetResult();
             _logger = logger;
+            _distributedCache = distributedCache;
         }
 
         private IConnection _connection;
@@ -84,9 +87,11 @@ namespace OrderService.BusinessLayer.RabbitMQ
 
                 if(msgJson != null)
                 {
-                    var message = JsonSerializer.Deserialize<ProductNameUpdateMessage>(msgJson);
-                    _logger.LogInformation($"Product Name is updated {message.ProductID} and new Name is : {message.NewName}");
-
+                    var message = JsonSerializer.Deserialize<ProductDto>(msgJson);
+                    if(message != null)
+                    {
+                        await HandleUpdateProductCaching(message);
+                    }
                 }
             };
 
@@ -96,7 +101,18 @@ namespace OrderService.BusinessLayer.RabbitMQ
                 autoAck: true
                 );
         }
+        private async Task HandleUpdateProductCaching(ProductDto productDto)
+        {
+            _logger.LogInformation($"Product Name is updated {productDto.ProductID} and new Name is : {productDto.ProductName}");
 
+            var productJson = JsonSerializer.Serialize(productDto);
+            var options = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5),
+                SlidingExpiration = TimeSpan.FromMinutes(1),
+            };
+            await _distributedCache.SetStringAsync($"product:{productDto.ProductID}", productJson, options);
+        }
         public void Dispose()
         {
             _channel?.Dispose();

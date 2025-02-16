@@ -1,10 +1,12 @@
 ﻿
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace OrderService.BusinessLayer.RabbitMQ
 {
@@ -12,12 +14,13 @@ namespace OrderService.BusinessLayer.RabbitMQ
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger<RabbitMQProductDeleteConsumer> _logger;
-
-        public RabbitMQProductDeleteConsumer(IConfiguration configuration, ILogger<RabbitMQProductDeleteConsumer> logger)
+        private readonly IDistributedCache _distributedCache;
+        public RabbitMQProductDeleteConsumer(IConfiguration configuration, ILogger<RabbitMQProductDeleteConsumer> logger, IDistributedCache distributedCache)
         {
             _configuration = configuration;
             _logger = logger;
             InitializeAsync().GetAwaiter().GetResult();
+            _distributedCache = distributedCache;
         }
         private IChannel _channel;
         private IConnection _connection;
@@ -86,7 +89,13 @@ namespace OrderService.BusinessLayer.RabbitMQ
                 if(message != null)
                 {
                     _logger.LogInformation($"product with id = {message.ProductID} and name = {message.DeletedName} is Deleted");
+                    string cacheKey = $"product:{message.ProductID}";
+
+                    await _distributedCache.RemoveAsync(cacheKey);
+                    _logger.LogInformation($"Cache entry removed for Product ID = {message.ProductID}");
+
                 }
+                await _channel.BasicAckAsync(args.DeliveryTag, false);
             };
 
             await _channel.BasicConsumeAsync(
